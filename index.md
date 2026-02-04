@@ -1,0 +1,419 @@
+[return to index](https://released.github.io/)
+
+<a id="article_top"></a>
+
+# RH850 UART0 DMA TX / RX (interrupt + idle timer)
+
+## Reference Project
+
+This training material is based on the **below reference project**:
+
+- [Sample_Project_RH850_S1_UART_TX_DMA_RX_interrupt](https://github.com/released/Sample_Project_RH850_S1_UART_TX_DMA_RX_interrupt)
+
+## Agenda
+
+* [System overview](#article_overview)
+* [DMA access: PEG & register update](#article_peg)
+* [Memory map](#article_mem_map)
+* [SRAM allocation (DMA buffer)](#article_sram)
+* [DMA address / register map](#article_dma_addr)
+* [UART address / register map](#article_uart_addr)
+* [Smart Config settings](#article_smc)
+* [Code flow: TX DMA / RX interrupt](#article_code_flow)
+* [RX idle detection timer](#article_rx_idle)
+* [Debug watch window](#article_watch)
+
+---
+
+<a id="article_overview"></a>
+
+## 1. System overview
+
+### Base board & MCU
+
+* EVM : Y-BLDC-SK-RH850F1KM-S1-V2 (R7F701684/LQFP100/1MB flash)
+* project MCU change to R7F7016923 (LQFP64/512K flash)
+
+### Peripherals
+
+* TAUJ0_0 : timer interval for 1ms interrupt
+
+* UART1 : RLIN31 (TX > P10_12 , RX > P10_11) , for printf and receive from keyboard
+
+* TAUJ1_0 : timer interval for UART1 RX idle byte detection
+  * baud rate 115200 : 217us
+  * baud rate 415000 : 60.24us
+
+* UART0 : RLIN30 (TX > P10_10 , RX > P10_09)
+  * UART0 TX : DMA
+  * UART0 RX : regular interrupt , with timer IRQ for idle detection
+
+[back to top](#article_top)
+
+---
+
+<a id="article_peg"></a>
+
+## 2. DMA access: PEG & register update
+
+Before using DMA to access SRAM, **PEG registers must be configured**.
+
+* set `PEG.SP` (SPEN = 1)
+* set `PEG.GnMK`
+* set `PEG.GnBA`
+* set `PDMAnDMyiCM`
+* set `PDMA0.DM00CM / DM01CM` (SPID / PE / supervisor)
+
+![](img/PEG_access.jpg)
+
+### PEG register references
+
+![](img/PEGSP.jpg)
+
+![](img/PEGGnMK.jpg)
+
+![](img/Identifiers_for_Slave_Guard_RH850_F1KM_S1.jpg)
+
+![](img/PEGGnBA_1.jpg)
+
+![](img/PEGGnBA_2.jpg)
+
+![](img/PEGGnBA_3.jpg)
+
+### Example code
+
+```c
+PDMA0.DM00CM = _DMAC_PE1_SETTING | _DMAC_SPID0_SETTING | _DMAC_SUPERVISON_MODE;    
+PDMA0.DM01CM = _DMAC_PE1_SETTING | _DMAC_SPID0_SETTING | _DMAC_SUPERVISON_MODE;
+PEG.SP.UINT32 = 0x00000001U;                /* SPEN = 1, permit access */
+PEG.G0MK.UINT32 = 0xFFFFF000U;              /* 32KB window mask */
+PEG.G0BA.UINT32 = ADDR_LOCAL_RAM_CPU1 |     /* Base address of PE Guard protection Area (start of Local RAM) */
+                (0x1U<<7U) |                /* Enable Access for SPID 3 */
+                (0x1U<<6U) |                /* Enable Access for SPID 2 */
+                (0x1U<<5U) |                /* Enable Access for SPID 1 */
+                (0x1U<<4U) |                /* Enable Access for SPID 0 */
+                (0x1U<<2U) |                /* Write access is enabled */
+                (0x1U<<1U) |                /* Read access is enabled */
+                (0x1U<<0U);                 /* Settings for access enable conditions are enabled */
+```
+
+```c
+/* LOCAL_RAM_CPU1 start address (PEG) */
+#define ADDR_LOCAL_RAM_CPU1         (0xFEBF0000)
+```
+
+[back to top](#article_top)
+
+---
+
+<a id="article_mem_map"></a>
+
+## 3. Memory map (RH850/F1KM-S1)
+
+![](img/Memory_Map_F1KM_S1.jpg)
+
+| FLASH  | LOCAL RAM(CPU1) | RETENTION RAM(CPU1) | LOCAL RAM(SELF) | RETENTION RAM(SELF) |
+|--------|-----------------|--------------------|----------------|---------------------|
+| 512K   | `0xFEBF0000 ~ 0xFEBF7FFF` | `0xFEBF8000 ~ 0xFEBFFFFF` | `0xFEDF0000 ~ 0xFEDF7FFF` | `0xFEDF8000 ~ 0xFEDFFFFF` |
+| 768K   | `0xFEBE8000 ~ 0xFEBF7FFF` | `0xFEBF8000 ~ 0xFEBFFFFF` | `0xFEDE8000 ~ 0xFEDF7FFF` | `0xFEDF8000 ~ 0xFEDFFFFF` |
+| 1MB    | `0xFEBE0000 ~ 0xFEBF7FFF` | `0xFEBF8000 ~ 0xFEBFFFFF` | `0xFEDE0000 ~ 0xFEDF7FFF` | `0xFEDF8000 ~ 0xFEDFFFFF` |
+
+CPU1 area vs Self area
+
+![](img/CPU1_area_Self_area_RH850_F1KM_S1.jpg)
+
+DMA access area (only allow access __CPU1 area__)
+
+![](img/Address_Space_Viewed_from_Bus_Master_S1_1M_1.jpg)
+
+[back to top](#article_top)
+
+---
+
+<a id="article_sram"></a>
+
+## 4. SRAM allocation (DMA buffer)
+
+Need to allocate SRAM section for DMA buffer.
+
+* Example (FLASH 512K) : `dma_buf` at `0xFEBF0000`
+
+![](img/cs_link_options_section_settings.jpg)
+
+Define TX / RX DMA buffers in `dma_buf` section:
+
+```c
+#pragma section dma_buf
+volatile uint8_t s_uart0_dma_rx_ring[APP_UART0_DMA_RX_RING_SIZE];
+volatile uint8_t s_uart0_dma_tx_buf[APP_UART0_DMA_TX_BUF_SIZE];
+#pragma section default
+```
+
+DMA buffer allocation result in map file:
+
+![](img/map_dma_tx_rx_buffer_addr.jpg)
+
+### UART DMA TX / RX config
+
+| Item | DMA source address | DMA source address count direction | DMA dest. address | DMA dest. address count direction |
+|------|--------------------|------------------------------------|------------------|-----------------------------------|
+| TX | `s_uart0_dma_tx_buf` | increase | `APP_UART0_TX_DR` | fix |
+| RX | `APP_UART0_RX_DR` | fix | `s_uart0_dma_rx_ring` | increase |
+
+[back to top](#article_top)
+
+---
+
+<a id="article_dma_addr"></a>
+
+## 5. DMA address / register map
+
+![](img/register_base_DMA0.jpg)
+
+![](img/DMA_src_dest_addr.jpg)
+
+[back to top](#article_top)
+
+---
+
+<a id="article_uart_addr"></a>
+
+## 6. UART address / register map
+
+![](img/register_base_RLIN3x.jpg)
+
+TX : `RLN3nLUTDR`
+
+RX : `RLN3nLURDR`
+
+![](img/RLIN3n_register_tx_rx.jpg)
+
+[back to top](#article_top)
+
+---
+
+<a id="article_smc"></a>
+
+## 7. Smart Config settings
+
+Target trigger source : UART0
+
+* `INTRLIN30UR0` : RLIN30 transmit interrupt
+
+* `INTRLIN30UR1` : RLIN30 receive complete interrupt
+
+![](img/DMA_trig_source_uart.jpg)
+
+TX configuration
+
+* src : set in code (`s_uart0_dma_tx_buf`)
+* dest : set in code (`APP_UART0_TX_DR`)
+* src count : increase
+* dest count : fixed
+
+![](img/smc_DMA00_config_tx.jpg)
+
+RX configuration
+
+* src : set in code (`APP_UART0_RX_DR`)
+* dest : set in code (`s_uart0_dma_rx_ring`)
+* src count : fixed
+* dest count : increase
+
+![](img/smc_DMA01_config_rx.jpg)
+
+[back to top](#article_top)
+
+---
+
+<a id="article_rx_idle"></a>
+
+<a id="article_code_flow"></a>
+
+## 8. Code flow: TX DMA / RX interrupt
+
+### TX DMA (UART0)
+
+Goal: CPU prepares a buffer, DMA moves bytes to UART0 TX data register.
+
+Flow summary:
+
+* Prepare `s_uart0_dma_tx_buf[]` with payload.
+* Configure DMA source = buffer, dest = `APP_UART0_TX_DR`.
+* Set count = payload length, src count increment, dest count fixed.
+* Enable DMA channel, UART0 TX trigger kicks DMA per byte.
+* TX done interrupt (or DMA end flag) marks completion.
+
+Notes:
+
+* TX DMA uses `INTRLIN30UR0` trigger.
+* `PDMA0.DM00CM` must include PE/SPID/supervisor settings before start.
+
+```c
+
+void APP_UART0_DMA_TxSend(const uint8_t *data, uint16_t len)
+{
+    uint16_t copy_len;
+ 
+    // memset(s_uart0_dma_tx_buf, 0xAA, sizeof(s_uart0_dma_tx_buf));
+
+
+    if ((data == 0) || (len == 0U))
+    {
+        return;
+    }
+
+    while (UART0_TX_IS_BUSY())
+    {
+        /* wait until TX can accept data */
+    }
+
+    R_Config_DMAC00_Suspend();
+    R_Config_DMAC00_Stop();
+    (void)DRV_DMA_ClearTcAndErr(APP_UART0_DMA_UNIT, APP_UART0_DMA_TX_CH);
+
+    copy_len = app_uart0_dma_txbuf_write(data, len);
+    if (copy_len == 0U)
+    {
+        return;
+    }
+    // tiny_printf("len2:%u\r\n", len);
+    // tiny_printf("copy_len2:%u\r\n", copy_len);
+
+    (void)DRV_DMA_SetChannelEx(APP_UART0_DMA_UNIT,
+                              APP_UART0_DMA_TX_CH,
+                              APP_DMA_CH0_SRC_ADDR,
+                              APP_DMA_CH0_DST_ADDR,
+                              copy_len);
+                              
+    s_uart0_dma_tx_busy = 1U;
+    R_Config_DMAC00_Resume();
+    R_Config_DMAC00_Start();
+
+    APP_UART0_TX_DR = s_uart0_dma_tx_buf[0];
+
+    // while (! (PDMA0.DCST0 & _DMAC_TRANSFER_COMPLETION_FLAG_CLEAR));
+    while (s_uart0_dma_tx_busy != 0U)
+    {
+        /* optional: add timeout / feed WDT */
+    }
+}
+
+```
+
+### RX interrupt (UART0)
+
+Goal: Use UART RX interrupt to capture bytes into a ring buffer, then use idle timer to decide a frame is complete.
+
+Flow summary:
+
+* Enable UART0 RX interrupt (no DMA for RX).
+* RX ISR reads `APP_UART0_RX_DR` and pushes into `s_uart0_dma_rx_ring[]`.
+* Each RX byte restarts the idle timer.
+* Timer expiry => treat as end-of-frame, stop UART, set `g_rcv_data_finish`.
+* Main loop checks flag, processes buffer, then re-arm UART + timer.
+
+Notes:
+
+* RX uses `INTRLIN30UR1` interrupt source.
+* RX buffer is in `dma_buf` section to ensure DMA-safe SRAM layout, even though RX is interrupt based.
+
+[back to top](#article_top)
+
+---
+
+<a id="article_rx_idle"></a>
+
+## 9. RX idle detection timer
+
+RH850 UART has no idle interrupt , need to use timer for idle detection (target: 2.5 bytes).
+
+```
+for uart rx idle timer isr :
+8N1 , 1 byte = 10 bits
+target : 2.5 bytes = 25 bits
+
+target_isr_timing
+- baud rate 115200 = (25 / 115200)*10^6 = 217.0us
+- baud rate 415000 = (25 / 415000)*10^6 = 60.24us
+
+timer_freq = PCLK(80MHz) / prescaler(1)
+CDR0 = (timer_freq * target_isr_timing/10^6) - 1
+- baud rate 115200 217.0us = (80MHz * 217us/10^6) - 1 = 80 * 217 - 1 = 0x43CF
+- baud rate 415000 60.24us = (80MHz * 60.24us/10^6) - 1 = 80 * 60.24 - 1 = 0x12D3
+```
+
+```c
+// #define APP_UART0_BAUD              (415000U)
+#define APP_UART0_BAUD              (115200U)
+
+#if (APP_UART0_BAUD == 115200U)
+    TAUJ1.CDR0 = 0x43CFU;   /* 217 us = 2.5 bytes @115200 */
+#elif (APP_UART0_BAUD == 415000U)
+    TAUJ1.CDR0 = 0x12D3U;   /* 60.24 us = 2.5 bytes @415000 */
+#else
+    #error "Unsupported APP_UART0_BAUD"
+#endif
+```
+
+RX TIMER IDLE detection flow
+
+```mermaid
+flowchart TD
+    A[APP_UART0_RX_Init] --> B[Reset RX buffer & state]
+    B --> C[UART0 Receive 1 byte enable]
+    C --> D[UART0 Start]
+    D --> E[STATE = RX_INIT]
+    E --> F[Start t3.5 Timer]
+
+    %% UART RX interrupt
+    F -->|UART RX IRQ| G[APP_UART0_RX_callback_receiveend]
+    G --> H[Store received byte]
+    H --> I[_prvvUARTRxISR]
+
+    %% State machine
+    I -->|STATE_RX_INIT| J[Enable Timer]
+    I -->|STATE_RX_ERROR| J
+    I -->|STATE_RX_IDLE| K[bufferPos=0]
+    K --> L[Store first byte]
+    L --> M[STATE = RX_RCV]
+    M --> J
+
+    I -->|STATE_RX_RCV| N{bufferPos < BUF_SIZE?}
+    N -->|Yes| O[Store byte]
+    O --> J
+    N -->|No| P[STATE = RX_ERROR]
+    P --> Q[Reset state]
+
+    %% Timer expiry (IDLE detected)
+    J -->|Timer expired| R[APP_UART0_RX_TimerIsr]
+    R --> S[_prvvTIMERExpiredISR]
+    S --> T{STATE == RX_RCV?}
+    T -->|Yes| U[UART Stop]
+    U --> V[g_rcv_data_finish = 1]
+    T -->|No| W[Ignore]
+    V --> X[STATE = RX_IDLE]
+
+    %% Main loop process
+    X --> Y[APP_UART0_RX_Process]
+    Y -->|g_rcv_data_finish| Z[Dump RX buffer]
+    Z --> AA[Clear buffer]
+    AA --> AB[Reset state]
+    AB --> AC[UART Start]
+```
+
+[back to top](#article_top)
+
+---
+
+<a id="article_watch"></a>
+
+## 10. Debug watch window
+
+If need to check global variable / array in watch windows, enable **[Access during the execution]** at Debugger Property > Debug Tool Settings tab.
+
+![](img/watch_windows.jpg)
+
+[back to top](#article_top)
+
+---
