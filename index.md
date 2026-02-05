@@ -360,46 +360,77 @@ RX TIMER IDLE detection flow
 
 ```mermaid
 flowchart TD
-    A[APP_UART0_RX_Init] --> B[Reset RX buffer & state]
-    B --> C[UART0 Receive 1 byte enable]
-    C --> D[UART0 Start]
-    D --> E[STATE = RX_INIT]
-    E --> F[Start t3.5 Timer]
+    %% ========================
+    %% Init
+    %% ========================
+    A[APP_UART0_RX_Init] --> A1[reset rx_buffer]
+    A1 --> A2[_vComPortResetState\nbufferPos=0\nSTATE=IDLE]
+    A2 --> A3[R_Config_UART0_Receive 1 byte]
+    A3 --> A4[R_Config_UART0_Start]
+    A4 --> A5[STATE = RX_INIT]
+    A5 --> A6[_vComPortTimersEnable]
 
-    %% UART RX interrupt
-    F -->|UART RX IRQ| G[APP_UART0_RX_callback_receiveend]
-    G --> H[Store received byte]
-    H --> I[_prvvUARTRxISR]
+    %% ========================
+    %% UART RX callback
+    %% ========================
+    B[UART RX interrupt] --> B1[APP_UART0_RX_callback_receiveend]
+    B1 --> B2[g_packet_data = g_uartrxbuf]
+    B2 --> B3[_prvvUARTRxISR]
 
-    %% State machine
-    I -->|STATE_RX_INIT| J[Enable Timer]
-    I -->|STATE_RX_ERROR| J
-    I -->|STATE_RX_IDLE| K[bufferPos=0]
-    K --> L[Store first byte]
-    L --> M[STATE = RX_RCV]
-    M --> J
+    %% ========================
+    %% RX State Machine
+    %% ========================
+    B3 -->|STATE_RX_INIT| C1[_vComPortTimersEnable]
+    B3 -->|STATE_RX_ERROR| C1
 
-    I -->|STATE_RX_RCV| N{bufferPos < BUF_SIZE?}
-    N -->|Yes| O[Store byte]
-    O --> J
-    N -->|No| P[STATE = RX_ERROR]
-    P --> Q[Reset state]
+    B3 -->|STATE_RX_IDLE| D1[bufferPos=0]
+    D1 --> D2[store first byte]
+    D2 --> D3[bufferPos++]
+    D3 --> D4[STATE = RX_RCV]
+    D4 --> D5[_vComPortTimersEnable]
 
-    %% Timer expiry (IDLE detected)
-    J -->|Timer expired| R[APP_UART0_RX_TimerIsr]
-    R --> S[_prvvTIMERExpiredISR]
-    S --> T{STATE == RX_RCV?}
-    T -->|Yes| U[UART Stop]
-    U --> V[g_rcv_data_finish = 1]
-    T -->|No| W[Ignore]
-    V --> X[STATE = RX_IDLE]
+    B3 -->|STATE_RX_RCV| E1{bufferPos < RX_BUF_SIZE?}
+    E1 -->|Yes| E2[store byte]
+    E2 --> E3[bufferPos++]
+    E3 --> E4[_vComPortTimersEnable]
 
-    %% Main loop process
-    X --> Y[APP_UART0_RX_Process]
-    Y -->|g_rcv_data_finish| Z[Dump RX buffer]
-    Z --> AA[Clear buffer]
-    AA --> AB[Reset state]
-    AB --> AC[UART Start]
+    E1 -->|No| F1[STATE = RX_ERROR]
+    F1 --> F2[_vComPortResetState]
+
+    %% ========================
+    %% RX re-arm (always)
+    %% ========================
+    C1 --> G[R_Config_UART0_Receive 1 byte]
+    D5 --> G
+    E4 --> G
+    F2 --> G
+
+    %% ========================
+    %% Timer (t3.5 idle)
+    %% ========================
+    H[TAUJ Timer expired] --> H1[APP_UART0_RX_TimerIsr]
+    H1 --> H2[_prvvTIMERExpiredISR]
+    H2 --> H3[g_bufferLastByte = bufferPos-1]
+
+    H3 --> H4{STATE == RX_RCV?}
+    H4 -->|Yes| H5[R_Config_UART0_Stop]
+    H5 --> H6[g_rcv_data_finish = 1]
+    H6 --> H7[_vComPortTimersDisable]
+    H7 --> H8[STATE = RX_IDLE]
+
+    H4 -->|No| H7
+
+    %% ========================
+    %% Main loop processing
+    %% ========================
+    I[APP_UART0_RX_Process] --> I1{g_rcv_data_finish?}
+    I1 -->|No| I_end[return]
+    I1 -->|Yes| I2[g_rcv_data_finish = 0]
+    I2 --> I3[dump rx_buffer]
+    I3 --> I4[clear rx_buffer]
+    I4 --> I5[_vComPortResetState]
+    I5 --> I6[R_Config_UART0_Start]
+
 ```
 
 [back to top](#article_top)
