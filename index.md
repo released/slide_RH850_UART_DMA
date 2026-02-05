@@ -226,8 +226,6 @@ RX configuration
 
 ---
 
-<a id="article_rx_idle"></a>
-
 <a id="article_code_flow"></a>
 
 ## 8. Code flow: TX DMA / RX interrupt
