@@ -10,6 +10,8 @@ This training material is based on the **below reference project**:
 
 - [Sample_Project_RH850_S1_UART_TX_DMA_RX_interrupt](https://github.com/released/Sample_Project_RH850_S1_UART_TX_DMA_RX_interrupt)
 
+- [Sample_Project_RH850_S1_UART_TX_RX_DMA](https://github.com/released/Sample_Project_RH850_S1_UART_TX_RX_DMA)
+
 ## Agenda
 
 * [System overview](#article_overview)
@@ -19,7 +21,7 @@ This training material is based on the **below reference project**:
 * [DMA address / register map](#article_dma_addr)
 * [UART address / register map](#article_uart_addr)
 * [Smart Config settings](#article_smc)
-* [Code flow: TX DMA / RX interrupt](#article_code_flow)
+* [Code flow: TX DMA / RX interrupt / / RX DMA](#article_code_flow)
 * [RX idle detection timer](#article_rx_idle)
 * [Debug watch window](#article_watch)
 
@@ -278,11 +280,7 @@ void APP_UART0_DMA_TxSend(const uint8_t *data, uint16_t len)
     // tiny_printf("len2:%u\r\n", len);
     // tiny_printf("copy_len2:%u\r\n", copy_len);
 
-    (void)DRV_DMA_SetChannelEx(APP_UART0_DMA_UNIT,
-                              APP_UART0_DMA_TX_CH,
-                              APP_DMA_CH0_SRC_ADDR,
-                              APP_DMA_CH0_DST_ADDR,
-                              copy_len);
+    APP_UART0_DMA_SetCh0(copy_len);
                               
     s_uart0_dma_tx_busy = 1U;
     R_Config_DMAC00_Resume();
@@ -354,80 +352,69 @@ CDR0 = (timer_freq * target_isr_timing/10^6) - 1
 #endif
 ```
 
-RX TIMER IDLE detection flow
+WRITE/READ packet designflow
 
 ```mermaid
 flowchart TD
-    %% ========================
-    %% Init
-    %% ========================
-    A[APP_UART0_RX_Init] --> A1[reset rx_buffer]
-    A1 --> A2[_vComPortResetState\nbufferPos=0\nSTATE=IDLE]
-    A2 --> A3[R_Config_UART0_Receive 1 byte]
-    A3 --> A4[R_Config_UART0_Start]
-    A4 --> A5[STATE = RX_INIT]
-    A5 --> A6[_vComPortTimersEnable]
+    A["Start: APP_GMSL_TxProcess"] --> B{"Select Command"}
+    B -->|"WRITE"| C["APP_GMSL_BuildWritePacket<br/>SYNC + ADDR[W] + REG + LEN + DATA"]
+    B -->|"READ"| D["APP_GMSL_BuildReadPacket<br/>SYNC + ADDR[R] + REG + LEN"]
 
-    %% ========================
-    %% UART RX callback
-    %% ========================
-    B[UART RX interrupt] --> B1[APP_UART0_RX_callback_receiveend]
-    B1 --> B2[g_packet_data = g_uartrxbuf]
-    B2 --> B3[_prvvUARTRxISR]
+    C --> E["TX DMA Send Packet"]
+    D --> E
 
-    %% ========================
-    %% RX State Machine
-    %% ========================
-    B3 -->|STATE_RX_INIT| C1[_vComPortTimersEnable]
-    B3 -->|STATE_RX_ERROR| C1
+    E --> F{"RX wait (RX-only or RX-DMA)"}
+    F -->|"WRITE"| G["Expect ACK (0xC3)"]
+    F -->|"READ"| H["Expect DATA length = LEN"]
 
-    B3 -->|STATE_RX_IDLE| D1[bufferPos=0]
-    D1 --> D2[store first byte]
-    D2 --> D3[bufferPos++]
-    D3 --> D4[STATE = RX_RCV]
-    D4 --> D5[_vComPortTimersEnable]
+    G --> I{"ACK received?"}
+    I -->|"Yes"| J["Log: ACK<br/>End write"]
+    I -->|"No (timeout)"| K["Log: TIMEOUT<br/>End write"]
 
-    B3 -->|STATE_RX_RCV| E1{bufferPos < RX_BUF_SIZE?}
-    E1 -->|Yes| E2[store byte]
-    E2 --> E3[bufferPos++]
-    E3 --> E4[_vComPortTimersEnable]
+    H --> L{"DATA received len == LEN?"}
+    L -->|"Yes"| M["Log: DATA len<br/>End read"]
+    L -->|"No (timeout)"| N["Log: TIMEOUT<br/>End read"]
 
-    E1 -->|No| F1[STATE = RX_ERROR]
-    F1 --> F2[_vComPortResetState]
+    J --> O["Idle / Wait next TX"]
+    K --> O
+    M --> O
+    N --> O
 
-    %% ========================
-    %% RX re-arm (always)
-    %% ========================
-    C1 --> G[R_Config_UART0_Receive 1 byte]
-    D5 --> G
-    E4 --> G
-    F2 --> G
+```
 
-    %% ========================
-    %% Timer (t3.5 idle)
-    %% ========================
-    H[TAUJ Timer expired] --> H1[APP_UART0_RX_TimerIsr]
-    H1 --> H2[_prvvTIMERExpiredISR]
-    H2 --> H3[g_bufferLastByte = bufferPos-1]
+RX‑only vs RX‑DMA detail difference
 
-    H3 --> H4{STATE == RX_RCV?}
-    H4 -->|Yes| H5[R_Config_UART0_Stop]
-    H5 --> H6[g_rcv_data_finish = 1]
-    H6 --> H7[_vComPortTimersDisable]
-    H7 --> H8[STATE = RX_IDLE]
+```mermaid
+flowchart TD
+    A["Start: RX Wait State<br/>APP_GMSL_ExpectAck / APP_GMSL_ExpectData"] --> B{"RX Mode?"}
 
-    H4 -->|No| H7
+    B -->|"RX-only (IRQ byte)"| C["UART RX ISR: byte-by-byte"]
+    C --> D["Store byte -> buffer<br/>update bufferPos"]
+    D --> E{"Expect type"}
+    E -->|"ACK"| F["Check first byte == 0xC3"]
+    E -->|"DATA"| G["if bufferPos >= expected_len"]
+    F --> H["Done: set recv_len / ack_ok<br/>stop UART + stop timer"]
+    G --> H
+    D --> I["Reset idle timer every byte"]
+    I --> J["TAUJ1 idle timeout"]
+    J --> K["Timeout: set error/tmo<br/>finish + stop UART"]
 
-    %% ========================
-    %% Main loop processing
-    %% ========================
-    I[APP_UART0_RX_Process] --> I1{g_rcv_data_finish?}
-    I1 -->|No| I_end[return]
-    I1 -->|Yes| I2[g_rcv_data_finish = 0]
-    I2 --> I3[dump rx_buffer]
-    I3 --> I4[clear rx_buffer]
-    I4 --> I5[_vComPortResetState]
-    I5 --> I6[R_Config_UART0_Start]
+    B -->|"RX-DMA"| L["DMA writes ring buffer"]
+    L --> M["TAUJ1 tick: read DMA write_pos"]
+    M --> N{"write_pos changed?"}
+    N -->|"Yes"| O["update last_pos<br/>reset wait_ticks"]
+    N -->|"No"| P["wait_ticks++"]
+    M --> Q{"Expect type"}
+    Q -->|"ACK"| R["if write_pos >= 1"]
+    Q -->|"DATA"| S["if write_pos >= expected_len"]
+    R --> T["Done: set bufferPos<br/>stop DMA + stop timer"]
+    S --> T
+    P --> U{"wait_ticks >= timeout?"}
+    U -->|"Yes"| V["Timeout: set error/tmo<br/>finish + stop DMA"]
+
+    H --> W["Main loop prints log<br/>ACK / DATA / TIMEOUT"]
+    T --> W
+    V --> W
 
 ```
 
