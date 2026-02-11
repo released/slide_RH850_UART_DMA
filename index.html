@@ -26,7 +26,7 @@
       
 <p><a href="https://released.github.io/">return to index</a></p>
 <p><a id="article_top" href=""></a></p>
-<h1 id="rh850-uart0-dma-tx--rx-interrupt--idle-timer">RH850 UART0 DMA TX / RX (interrupt + idle timer) </h1>
+<h1 id="rh850-uart0-dma-tx--rx-dmainterrupt--idle-timer">RH850 UART0 DMA TX / RX (DMA/interrupt + idle timer) </h1>
 <h2 id="reference-project">Reference Project </h2>
 <p>This training material is based on the <strong>below reference project</strong>:</p>
 <ul>
@@ -77,11 +77,28 @@
 <p>UART0 : RLIN30 (TX &gt; P10_10 , RX &gt; P10_09)</p>
 <ul>
 <li>UART0 TX : DMA</li>
-<li>UART0 RX : regular interrupt , with timer IRQ for idle detection</li>
+<li>UART0 RX : DMA/regular interrupt , with timer IRQ for idle detection</li>
 </ul>
 </li>
+<li>
+<p>check below define in app_uart0_config.h</p>
+</li>
 </ul>
-<p><a href="#article_top">back to top</a></p>
+<pre data-role="codeBlock" data-info="c" class="language-c c"><code><span class="token comment">/* UART0 RX mode select: 1 = DMA RX, 0 = interrupt RX-only */</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">APP_UART0_RX_MODE_DMA</span>       <span class="token expression"><span class="token punctuation">(</span><span class="token number">1U</span><span class="token punctuation">)</span></span></span>
+</code></pre><ul>
+<li>modify cstart.asm , to increase stack size</li>
+</ul>
+<pre data-role="codeBlock" data-info="c" class="language-c c"><code><span class="token punctuation">;</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span>
+<span class="token punctuation">;</span>	system stack
+<span class="token punctuation">;</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span>
+STACKSIZE	<span class="token punctuation">.</span>set	<span class="token number">0x1000</span>
+	<span class="token punctuation">.</span>section	<span class="token string">".stack.bss"</span><span class="token punctuation">,</span> bss
+	<span class="token punctuation">.</span>align	<span class="token number">4</span>
+	<span class="token punctuation">.</span><span class="token function">ds</span>	<span class="token punctuation">(</span>STACKSIZE<span class="token punctuation">)</span>
+	<span class="token punctuation">.</span>align	<span class="token number">4</span>
+_stacktop<span class="token operator">:</span>
+</code></pre><p><a href="#article_top">back to top</a></p>
 <hr>
 <p><a id="article_peg" href=""></a></p>
 <h2 id="2-dma-access-peg--register-update">2. DMA access: PEG &amp; register update </h2>
@@ -424,7 +441,7 @@ CDR0 = (timer_freq * target_isr_timing/10^6) - 1
 <div class="md-toc">
 <details style="padding:0;;padding-left:0px;" open="">
         <summary class="md-toc-link-wrapper">
-          <a href="#rh850-uart0-dma-tx--rx-interrupt--idle-timer" class="md-toc-link"><p>RH850 UART0 DMA TX / RX (interrupt + idle timer)</p>
+          <a href="#rh850-uart0-dma-tx--rx-dmainterrupt--idle-timer" class="md-toc-link"><p>RH850 UART0 DMA TX / RX (DMA/interrupt + idle timer)</p>
 </a>
           </summary>
         <div>

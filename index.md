@@ -2,7 +2,7 @@
 
 <a id="article_top"></a>
 
-# RH850 UART0 DMA TX / RX (interrupt + idle timer)
+# RH850 UART0 DMA TX / RX (DMA/interrupt + idle timer)
 
 ## Reference Project
 
@@ -48,7 +48,28 @@ This training material is based on the **below reference project**:
 
 * UART0 : RLIN30 (TX > P10_10 , RX > P10_09)
   * UART0 TX : DMA
-  * UART0 RX : regular interrupt , with timer IRQ for idle detection
+  * UART0 RX : DMA/regular interrupt , with timer IRQ for idle detection
+		
+* check below define in app_uart0_config.h
+		
+```c
+/* UART0 RX mode select: 1 = DMA RX, 0 = interrupt RX-only */
+#define APP_UART0_RX_MODE_DMA       (1U)
+```		
+
+* modify cstart.asm , to increase stack size
+		
+```c
+;-----------------------------------------------------------------------------
+;	system stack
+;-----------------------------------------------------------------------------
+STACKSIZE	.set	0x1000
+	.section	".stack.bss", bss
+	.align	4
+	.ds	(STACKSIZE)
+	.align	4
+_stacktop:
+```
 
 [back to top](#article_top)
 
