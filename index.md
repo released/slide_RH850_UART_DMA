@@ -335,6 +335,108 @@ Notes:
 * RX uses `INTRLIN30UR1` interrupt source.
 * RX buffer is in `dma_buf` section to ensure DMA-safe SRAM layout, even though RX is interrupt based.
 
+
+[back to top](#article_top)
+
+---
+
+### UART TX / RX : WRITE/READ packet design flow
+
+Target : communicate with GMSL device
+
+* MCU send WRITE packet to GMSL
+```c
+/* GMSL UART Base Mode WRITE packet format (MCU -> GMSL):
+ * [0] SYNC        = 0x79
+ * [1] DEV_ADDR_RW = (dev_addr << 1) | 0
+ * [2] REG_ADDR
+ * [3] LEN         = N (1..255, 256 => 0x00)
+ * [4..] DATA[0..N-1]
+ *
+ * Response (GMSL -> MCU): ACK 0xC3 only.
+ */
+```
+
+* MCU send READ packet to GMSL
+```c
+
+/* GMSL UART Base Mode READ request format (MCU -> GMSL):
+ * [0] SYNC        = 0x79
+ * [1] DEV_ADDR_RW = (dev_addr << 1) | 1
+ * [2] REG_ADDR
+ * [3] LEN         = N (1..255, 256 => 0x00)
+ *
+ * Response (GMSL -> MCU): DATA[0..N-1] only (no ACK).
+ */
+```
+
+* WRITE/READ packet design flow
+```mermaid
+flowchart TD
+    A["Start: APP_GMSL_TxProcess"] --> B{"Select Command"}
+    B -->|"WRITE"| C["APP_GMSL_BuildWritePacket<br/>SYNC + ADDR[W] + REG + LEN + DATA"]
+    B -->|"READ"| D["APP_GMSL_BuildReadPacket<br/>SYNC + ADDR[R] + REG + LEN"]
+
+    C --> E["TX DMA Send Packet"]
+    D --> E
+
+    E --> F{"RX wait (RX-only or RX-DMA)"}
+    F -->|"WRITE"| G["Expect ACK (0xC3)"]
+    F -->|"READ"| H["Expect DATA length = LEN"]
+
+    G --> I{"ACK received?"}
+    I -->|"Yes"| J["Log: ACK<br/>End write"]
+    I -->|"No (timeout)"| K["Log: TIMEOUT<br/>End write"]
+
+    H --> L{"DATA received len == LEN?"}
+    L -->|"Yes"| M["Log: DATA len<br/>End read"]
+    L -->|"No (timeout)"| N["Log: TIMEOUT<br/>End read"]
+
+    J --> O["Idle / Wait next TX"]
+    K --> O
+    M --> O
+    N --> O
+
+```
+
+* RX‑only vs RX‑DMA detail difference
+
+```mermaid
+flowchart TD
+    A["Start: RX Wait State<br/>APP_GMSL_ExpectAck / APP_GMSL_ExpectData"] --> B{"RX Mode?"}
+
+    B -->|"RX-only (IRQ byte)"| C["UART RX ISR: byte-by-byte"]
+    C --> D["Store byte -> buffer<br/>update bufferPos"]
+    D --> E{"Expect type"}
+    E -->|"ACK"| F["Check first byte == 0xC3"]
+    E -->|"DATA"| G["if bufferPos >= expected_len"]
+    F --> H["Done: set recv_len / ack_ok<br/>stop UART + stop timer"]
+    G --> H
+    D --> I["Reset idle timer every byte"]
+    I --> J["TAUJ1 idle timeout"]
+    J --> K["Timeout: set error/tmo<br/>finish + stop UART"]
+
+    B -->|"RX-DMA"| L["DMA writes ring buffer"]
+    L --> M["TAUJ1 tick: read DMA write_pos"]
+    M --> N{"write_pos changed?"}
+    N -->|"Yes"| O["update last_pos<br/>reset wait_ticks"]
+    N -->|"No"| P["wait_ticks++"]
+    M --> Q{"Expect type"}
+    Q -->|"ACK"| R["if write_pos >= 1"]
+    Q -->|"DATA"| S["if write_pos >= expected_len"]
+    R --> T["Done: set bufferPos<br/>stop DMA + stop timer"]
+    S --> T
+    P --> U{"wait_ticks >= timeout?"}
+    U -->|"Yes"| V["Timeout: set error/tmo<br/>finish + stop DMA"]
+
+    H --> W["Main loop prints log<br/>ACK / DATA / TIMEOUT"]
+    T --> W
+    V --> W
+
+```
+
+
+
 [back to top](#article_top)
 
 ---
@@ -371,72 +473,6 @@ CDR0 = (timer_freq * target_isr_timing/10^6) - 1
 #else
     #error "Unsupported APP_UART0_BAUD"
 #endif
-```
-
-WRITE/READ packet designflow
-
-```mermaid
-flowchart TD
-    A["Start: APP_GMSL_TxProcess"] --> B{"Select Command"}
-    B -->|"WRITE"| C["APP_GMSL_BuildWritePacket<br/>SYNC + ADDR[W] + REG + LEN + DATA"]
-    B -->|"READ"| D["APP_GMSL_BuildReadPacket<br/>SYNC + ADDR[R] + REG + LEN"]
-
-    C --> E["TX DMA Send Packet"]
-    D --> E
-
-    E --> F{"RX wait (RX-only or RX-DMA)"}
-    F -->|"WRITE"| G["Expect ACK (0xC3)"]
-    F -->|"READ"| H["Expect DATA length = LEN"]
-
-    G --> I{"ACK received?"}
-    I -->|"Yes"| J["Log: ACK<br/>End write"]
-    I -->|"No (timeout)"| K["Log: TIMEOUT<br/>End write"]
-
-    H --> L{"DATA received len == LEN?"}
-    L -->|"Yes"| M["Log: DATA len<br/>End read"]
-    L -->|"No (timeout)"| N["Log: TIMEOUT<br/>End read"]
-
-    J --> O["Idle / Wait next TX"]
-    K --> O
-    M --> O
-    N --> O
-
-```
-
-RX‑only vs RX‑DMA detail difference
-
-```mermaid
-flowchart TD
-    A["Start: RX Wait State<br/>APP_GMSL_ExpectAck / APP_GMSL_ExpectData"] --> B{"RX Mode?"}
-
-    B -->|"RX-only (IRQ byte)"| C["UART RX ISR: byte-by-byte"]
-    C --> D["Store byte -> buffer<br/>update bufferPos"]
-    D --> E{"Expect type"}
-    E -->|"ACK"| F["Check first byte == 0xC3"]
-    E -->|"DATA"| G["if bufferPos >= expected_len"]
-    F --> H["Done: set recv_len / ack_ok<br/>stop UART + stop timer"]
-    G --> H
-    D --> I["Reset idle timer every byte"]
-    I --> J["TAUJ1 idle timeout"]
-    J --> K["Timeout: set error/tmo<br/>finish + stop UART"]
-
-    B -->|"RX-DMA"| L["DMA writes ring buffer"]
-    L --> M["TAUJ1 tick: read DMA write_pos"]
-    M --> N{"write_pos changed?"}
-    N -->|"Yes"| O["update last_pos<br/>reset wait_ticks"]
-    N -->|"No"| P["wait_ticks++"]
-    M --> Q{"Expect type"}
-    Q -->|"ACK"| R["if write_pos >= 1"]
-    Q -->|"DATA"| S["if write_pos >= expected_len"]
-    R --> T["Done: set bufferPos<br/>stop DMA + stop timer"]
-    S --> T
-    P --> U{"wait_ticks >= timeout?"}
-    U -->|"Yes"| V["Timeout: set error/tmo<br/>finish + stop DMA"]
-
-    H --> W["Main loop prints log<br/>ACK / DATA / TIMEOUT"]
-    T --> W
-    V --> W
-
 ```
 
 [back to top](#article_top)

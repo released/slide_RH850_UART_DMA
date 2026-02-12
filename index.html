@@ -344,32 +344,34 @@ PEG<span class="token punctuation">.</span>G0BA<span class="token punctuation">.
 </ul>
 <p><a href="#article_top">back to top</a></p>
 <hr>
-<p><a id="article_rx_idle" href=""></a></p>
-<h2 id="9-rx-idle-detection-timer">9. RX idle detection timer </h2>
-<p>RH850 UART has no idle interrupt , need to use timer for idle detection (target: 2.5 bytes).</p>
-<pre data-role="codeBlock" data-info="" class="language-text"><code>for uart rx idle timer isr :
-8N1 , 1 byte = 10 bits
-target : 2.5 bytes = 25 bits
-
-target_isr_timing
-- baud rate 115200 = (25 / 115200)*10^6 = 217.0us
-- baud rate 415000 = (25 / 415000)*10^6 = 60.24us
-
-timer_freq = PCLK(80MHz) / prescaler(1)
-CDR0 = (timer_freq * target_isr_timing/10^6) - 1
-- baud rate 115200 217.0us = (80MHz * 217us/10^6) - 1 = 80 * 217 - 1 = 0x43CF
-- baud rate 415000 60.24us = (80MHz * 60.24us/10^6) - 1 = 80 * 60.24 - 1 = 0x12D3
-</code></pre><pre data-role="codeBlock" data-info="c" class="language-c c"><code><span class="token comment">// #define APP_UART0_BAUD              (415000U)</span>
-<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">APP_UART0_BAUD</span>              <span class="token expression"><span class="token punctuation">(</span><span class="token number">115200U</span><span class="token punctuation">)</span></span></span>
-
-<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">if</span> <span class="token expression"><span class="token punctuation">(</span>APP_UART0_BAUD <span class="token operator">==</span> <span class="token number">115200U</span><span class="token punctuation">)</span></span></span>
-    TAUJ1<span class="token punctuation">.</span>CDR0 <span class="token operator">=</span> <span class="token number">0x43CFU</span><span class="token punctuation">;</span>   <span class="token comment">/* 217 us = 2.5 bytes @115200 */</span>
-<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">elif</span> <span class="token expression"><span class="token punctuation">(</span>APP_UART0_BAUD <span class="token operator">==</span> <span class="token number">415000U</span><span class="token punctuation">)</span></span></span>
-    TAUJ1<span class="token punctuation">.</span>CDR0 <span class="token operator">=</span> <span class="token number">0x12D3U</span><span class="token punctuation">;</span>   <span class="token comment">/* 60.24 us = 2.5 bytes @415000 */</span>
-<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">else</span></span>
-    <span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">error</span> <span class="token string">"Unsupported APP_UART0_BAUD"</span></span>
-<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
-</code></pre><p>WRITE/READ packet designflow</p>
+<h3 id="uart-tx--rx--writeread-packet-design-flow">UART TX / RX : WRITE/READ packet design flow </h3>
+<p>Target : communicate with GMSL device</p>
+<ul>
+<li>MCU send WRITE packet to GMSL</li>
+</ul>
+<pre data-role="codeBlock" data-info="c" class="language-c c"><code><span class="token comment">/* GMSL UART Base Mode WRITE packet format (MCU -&gt; GMSL):
+ * [0] SYNC        = 0x79
+ * [1] DEV_ADDR_RW = (dev_addr &lt;&lt; 1) | 0
+ * [2] REG_ADDR
+ * [3] LEN         = N (1..255, 256 =&gt; 0x00)
+ * [4..] DATA[0..N-1]
+ *
+ * Response (GMSL -&gt; MCU): ACK 0xC3 only.
+ */</span>
+</code></pre><ul>
+<li>MCU send READ packet to GMSL</li>
+</ul>
+<pre data-role="codeBlock" data-info="c" class="language-c c"><code><span class="token comment">/* GMSL UART Base Mode READ request format (MCU -&gt; GMSL):
+ * [0] SYNC        = 0x79
+ * [1] DEV_ADDR_RW = (dev_addr &lt;&lt; 1) | 1
+ * [2] REG_ADDR
+ * [3] LEN         = N (1..255, 256 =&gt; 0x00)
+ *
+ * Response (GMSL -&gt; MCU): DATA[0..N-1] only (no ACK).
+ */</span>
+</code></pre><ul>
+<li>WRITE/READ packet design flow</li>
+</ul>
 <div class="mermaid">flowchart TD
     A["Start: APP_GMSL_TxProcess"] --&gt; B{"Select Command"}
     B --&gt;|"WRITE"| C["APP_GMSL_BuildWritePacket&lt;br/&gt;SYNC + ADDR[W] + REG + LEN + DATA"]
@@ -395,7 +397,9 @@ CDR0 = (timer_freq * target_isr_timing/10^6) - 1
     M --&gt; O
     N --&gt; O
 
-</div><p>RX‑only vs RX‑DMA detail difference</p>
+</div><ul>
+<li>RX‑only vs RX‑DMA detail difference</li>
+</ul>
 <div class="mermaid">flowchart TD
     A["Start: RX Wait State&lt;br/&gt;APP_GMSL_ExpectAck / APP_GMSL_ExpectData"] --&gt; B{"RX Mode?"}
 
@@ -428,6 +432,33 @@ CDR0 = (timer_freq * target_isr_timing/10^6) - 1
     V --&gt; W
 
 </div><p><a href="#article_top">back to top</a></p>
+<hr>
+<p><a id="article_rx_idle" href=""></a></p>
+<h2 id="9-rx-idle-detection-timer">9. RX idle detection timer </h2>
+<p>RH850 UART has no idle interrupt , need to use timer for idle detection (target: 2.5 bytes).</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>for uart rx idle timer isr :
+8N1 , 1 byte = 10 bits
+target : 2.5 bytes = 25 bits
+
+target_isr_timing
+- baud rate 115200 = (25 / 115200)*10^6 = 217.0us
+- baud rate 415000 = (25 / 415000)*10^6 = 60.24us
+
+timer_freq = PCLK(80MHz) / prescaler(1)
+CDR0 = (timer_freq * target_isr_timing/10^6) - 1
+- baud rate 115200 217.0us = (80MHz * 217us/10^6) - 1 = 80 * 217 - 1 = 0x43CF
+- baud rate 415000 60.24us = (80MHz * 60.24us/10^6) - 1 = 80 * 60.24 - 1 = 0x12D3
+</code></pre><pre data-role="codeBlock" data-info="c" class="language-c c"><code><span class="token comment">// #define APP_UART0_BAUD              (415000U)</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">APP_UART0_BAUD</span>              <span class="token expression"><span class="token punctuation">(</span><span class="token number">115200U</span><span class="token punctuation">)</span></span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">if</span> <span class="token expression"><span class="token punctuation">(</span>APP_UART0_BAUD <span class="token operator">==</span> <span class="token number">115200U</span><span class="token punctuation">)</span></span></span>
+    TAUJ1<span class="token punctuation">.</span>CDR0 <span class="token operator">=</span> <span class="token number">0x43CFU</span><span class="token punctuation">;</span>   <span class="token comment">/* 217 us = 2.5 bytes @115200 */</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">elif</span> <span class="token expression"><span class="token punctuation">(</span>APP_UART0_BAUD <span class="token operator">==</span> <span class="token number">415000U</span><span class="token punctuation">)</span></span></span>
+    TAUJ1<span class="token punctuation">.</span>CDR0 <span class="token operator">=</span> <span class="token number">0x12D3U</span><span class="token punctuation">;</span>   <span class="token comment">/* 60.24 us = 2.5 bytes @415000 */</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">else</span></span>
+    <span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">error</span> <span class="token string">"Unsupported APP_UART0_BAUD"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+</code></pre><p><a href="#article_top">back to top</a></p>
 <hr>
 <p><a id="article_watch" href=""></a></p>
 <h2 id="10-debug-watch-window">10. Debug watch window </h2>
@@ -545,6 +576,10 @@ CDR0 = (timer_freq * target_isr_timing/10^6) - 1
           </a></div><div class="md-toc-link-wrapper" style="padding:0;;display:list-item;list-style:square;margin-left:42px">
           <a href="#rx-interrupt-uart0" class="md-toc-link">
             <p>RX interrupt (UART0)</p>
+
+          </a></div><div class="md-toc-link-wrapper" style="padding:0;;display:list-item;list-style:square;margin-left:42px">
+          <a href="#uart-tx--rx--writeread-packet-design-flow" class="md-toc-link">
+            <p>UART TX / RX : WRITE/READ packet design flow</p>
 
           </a></div>
         </div>
