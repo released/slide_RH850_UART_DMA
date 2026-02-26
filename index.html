@@ -782,7 +782,7 @@ PEG<span class="token punctuation">.</span>G0BA<span class="token punctuation">.
  * [2] REG_ADDR
  * [3] LEN         = N (1..255, 256 =&gt; 0x00)
  *
- * Response (GMSL -&gt; MCU): DATA[0..N-1] only (no ACK).
+ * Response (GMSL -&gt; MCU): ACK 0xC3 + DATA[0..N-1].
  */</span>
 </code></pre><ul>
 <li>WRITE/READ packet design flow</li>
@@ -797,13 +797,13 @@ PEG<span class="token punctuation">.</span>G0BA<span class="token punctuation">.
 
     E --&gt; F{"RX wait (RX-only or RX-DMA)"}
     F --&gt;|"WRITE"| G["Expect ACK (0xC3)"]
-    F --&gt;|"READ"| H["Expect DATA length = LEN"]
+    F --&gt;|"READ"| H["Expect ACK (0xC3) + DATA length = LEN"]
 
     G --&gt; I{"ACK received?"}
     I --&gt;|"Yes"| J["Log: ACK&lt;br/&gt;End write"]
     I --&gt;|"No (timeout)"| K["Log: TIMEOUT&lt;br/&gt;End write"]
 
-    H --&gt; L{"DATA received len == LEN?"}
+    H --&gt; L{"ACK valid and DATA len == LEN?"}
     L --&gt;|"Yes"| M["Log: DATA len&lt;br/&gt;End read"]
     L --&gt;|"No (timeout)"| N["Log: TIMEOUT&lt;br/&gt;End read"]
 
@@ -813,7 +813,7 @@ PEG<span class="token punctuation">.</span>G0BA<span class="token punctuation">.
     N --&gt; O
 
 </div><ul>
-<li>RX?nly vs RX?MA detail difference</li>
+<li>RX only vs RX DMA detail difference</li>
 </ul>
 <div class="mermaid">flowchart TD
     A["Start: RX Wait State&lt;br/&gt;APP_GMSL_ExpectAck / APP_GMSL_ExpectData"] --&gt; B{"RX Mode?"}
@@ -822,7 +822,7 @@ PEG<span class="token punctuation">.</span>G0BA<span class="token punctuation">.
     C --&gt; D["Store byte -&gt; buffer&lt;br/&gt;update bufferPos"]
     D --&gt; E{"Expect type"}
     E --&gt;|"ACK"| F["Check first byte == 0xC3"]
-    E --&gt;|"DATA"| G["if bufferPos &gt;= expected_len"]
+    E --&gt;|"DATA"| G["if bufferPos &gt;= (expected_len + 1)"]
     F --&gt; H["Done: set recv_len / ack_ok&lt;br/&gt;stop UART + stop timer"]
     G --&gt; H
     D --&gt; I["Reset idle timer every byte"]
@@ -836,7 +836,7 @@ PEG<span class="token punctuation">.</span>G0BA<span class="token punctuation">.
     N --&gt;|"No"| P["wait_ticks++"]
     M --&gt; Q{"Expect type"}
     Q --&gt;|"ACK"| R["if write_pos &gt;= 1"]
-    Q --&gt;|"DATA"| S["if write_pos &gt;= expected_len"]
+    Q --&gt;|"DATA"| S["if write_pos &gt;= (expected_len + 1)"]
     R --&gt; T["Done: set bufferPos&lt;br/&gt;stop DMA + stop timer"]
     S --&gt; T
     P --&gt; U{"wait_ticks &gt;= timeout?"}
