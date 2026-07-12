@@ -6,7 +6,7 @@
 
 > 以 RH850/F1KM-S1 為例，串接 UART、DMA、interrupt、idle timer、PEG 保護與 SRAM 配置，建立可追蹤的 TX / RX 資料流。
 
-## 閱讀重點
+## 內容摘要
 
 - 先從 system overview 確認 UART、DMA channel、buffer 與 interrupt 的責任分工。
 - 再核對 bus master、PEG、register base address 與 linker section，確保 DMA 能存取目標 SRAM。
@@ -14,7 +14,7 @@
 
 ## Reference Project
 
-This training material is based on the **below reference project**:
+This page references the following projects:
 
 - [Sample_Project_RH850_S1_UART_TX_DMA_RX_interrupt](https://github.com/released/Sample_Project_RH850_S1_UART_TX_DMA_RX_interrupt)
 
