@@ -1,8 +1,16 @@
-﻿[return to index](https://released.github.io/)
+﻿[回到知識庫總索引](https://released.github.io/)
 
 <a id="article_top"></a>
 
 # RH850 UART0 DMA TX / RX (DMA/interrupt + idle timer)
+
+> 以 RH850/F1KM-S1 為例，串接 UART、DMA、interrupt、idle timer、PEG 保護與 SRAM 配置，建立可追蹤的 TX / RX 資料流。
+
+## 閱讀重點
+
+- 先從 system overview 確認 UART、DMA channel、buffer 與 interrupt 的責任分工。
+- 再核對 bus master、PEG、register base address 與 linker section，確保 DMA 能存取目標 SRAM。
+- 最後用 watch window、封包紀錄與 idle timeout 驗證資料完整性。
 
 ## Reference Project
 
