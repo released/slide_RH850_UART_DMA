@@ -1,4 +1,4 @@
-﻿[回到知識庫總索引](https://released.github.io/)
+[回到知識庫總索引](https://released.github.io/)
 
 <a id="article_top"></a>
 
@@ -95,21 +95,21 @@ Before using DMA to access SRAM, **PEG registers must be configured**.
 * set `PDMAnDMyiCM`
 * set `PDMA0.DM00CM / DM01CM` (SPID / PE / supervisor)
 
-![](img/PEG_access.jpg)
+![2. DMA access: PEG & register update — PEG access](img/PEG_access.jpg)
 
 ### PEG register references
 
-![](img/PEGSP.jpg)
+![PEG register references — PEGSP](img/PEGSP.jpg)
 
-![](img/PEGGnMK.jpg)
+![PEG register references — PEGGnMK](img/PEGGnMK.jpg)
 
-![](img/Identifiers_for_Slave_Guard_RH850_F1KM_S1.jpg)
+![PEG register references — Identifiers for Slave Guard RH850 F1KM S1](img/Identifiers_for_Slave_Guard_RH850_F1KM_S1.jpg)
 
-![](img/PEGGnBA_1.jpg)
+![PEG register references — PEGGnBA 1](img/PEGGnBA_1.jpg)
 
-![](img/PEGGnBA_2.jpg)
+![PEG register references — PEGGnBA 2](img/PEGGnBA_2.jpg)
 
-![](img/PEGGnBA_3.jpg)
+![PEG register references — PEGGnBA 3](img/PEGGnBA_3.jpg)
 
 ### Example code
 
@@ -141,7 +141,7 @@ PEG.G0BA.UINT32 = ADDR_LOCAL_RAM_CPU1 |     /* Base address of PE Guard protecti
 
 ## 3. Memory map (RH850/F1KM-S1)
 
-![](img/Memory_Map_F1KM_S1.jpg)
+![3. Memory map (RH850/F1KM-S1) — Memory Map F1KM S1](img/Memory_Map_F1KM_S1.jpg)
 
 | FLASH  | LOCAL RAM(CPU1) | RETENTION RAM(CPU1) | LOCAL RAM(SELF) | RETENTION RAM(SELF) |
 |--------|-----------------|--------------------|----------------|---------------------|
@@ -158,9 +158,9 @@ Source:
 
 #### F1KM-S1
 
-![](img/Memory_Map_F1KM_S1.jpg)
+![F1KM-S1 — Memory Map F1KM S1](img/Memory_Map_F1KM_S1.jpg)
 
-![](img/Product_Lineup_F1KM_S1.jpg)
+![F1KM-S1 — Product Lineup F1KM S1](img/Product_Lineup_F1KM_S1.jpg)
 
 
 | Series | Pin count | Code Flash size | LOCAL RAM(CPU1) | RETENTION RAM(CPU1) | LOCAL RAM(SELF) | RETENTION RAM(SELF) | Part Name |
@@ -180,9 +180,9 @@ Source:
 
 #### F1KM-S2
 
-![](img/Memory_Map_F1KM_S2.jpg)
+![F1KM-S2 — Memory Map F1KM S2](img/Memory_Map_F1KM_S2.jpg)
 
-![](img/Product_Lineup_F1KM_S2.jpg)
+![F1KM-S2 — Product Lineup F1KM S2](img/Product_Lineup_F1KM_S2.jpg)
 
 
 | Series | Pin count | Code Flash size | LOCAL RAM(CPU1) | RETENTION RAM(Bank B) | LOCAL RAM(SELF) | GLOBAL RAM(Bank A) | GLOBAL RAM(Bank B) | Part Name |
@@ -193,9 +193,9 @@ Source:
 
 #### F1KM-S4
 
-![](img/Memory_Map_F1KM_S4.jpg)
+![F1KM-S4 — Memory Map F1KM S4](img/Memory_Map_F1KM_S4.jpg)
 
-![](img/Product_Lineup_F1KM_S4.jpg)
+![F1KM-S4 — Product Lineup F1KM S4](img/Product_Lineup_F1KM_S4.jpg)
 
 
 | Series | Pin count | Code Flash size | LOCAL RAM(CPU1) | RETENTION RAM(Bank B) | LOCAL RAM(SELF) | GLOBAL RAM(Bank A) | GLOBAL RAM(Bank B) | Part Name |
@@ -213,9 +213,9 @@ Source:
 
 #### F1KH-D8
 
-![](img/Memory_Map_F1KH_D8.jpg)
+![F1KH-D8 — Memory Map F1KH D8](img/Memory_Map_F1KH_D8.jpg)
 
-![](img/Product_Lineup_F1KH_D8.jpg)
+![F1KH-D8 — Product Lineup F1KH D8](img/Product_Lineup_F1KH_D8.jpg)
 
 
 | Series | Pin count | Code Flash size | LOCAL RAM(CPU1) | LOCAL RAM(CPU2) | RETENTION RAM(Bank B) | GLOBAL RAM(Bank A) | GLOBAL RAM(Bank B) | Part Name |
@@ -229,11 +229,11 @@ Source:
 
 CPU1 area vs Self area
 
-![](img/CPU1_area_Self_area_RH850_F1KM_S1.jpg)
+![F1KH-D8 — CPU1 area Self area RH850 F1KM S1](img/CPU1_area_Self_area_RH850_F1KM_S1.jpg)
 
 DMA access area (only allow access __CPU1 area__)
 
-![](img/Address_Space_Viewed_from_Bus_Master_S1_1M_1.jpg)
+![F1KH-D8 — Address Space Viewed from Bus Master S1 1M 1](img/Address_Space_Viewed_from_Bus_Master_S1_1M_1.jpg)
 
 [back to top](#article_top)
 
@@ -247,7 +247,7 @@ Need to allocate SRAM section for DMA buffer.
 
 * Example (FLASH 512K) : `dma_buf` at `0xFEBF0000`
 
-![](img/cs_link_options_section_settings.jpg)
+![4. SRAM allocation (DMA buffer) — cs link options section settings](img/cs_link_options_section_settings.jpg)
 
 Define TX / RX DMA buffers in `dma_buf` section:
 
@@ -260,7 +260,7 @@ volatile uint8_t s_uart0_dma_tx_buf[APP_UART0_DMA_TX_BUF_SIZE];
 
 DMA buffer allocation result in map file:
 
-![](img/map_dma_tx_rx_buffer_addr.jpg)
+![4. SRAM allocation (DMA buffer) — map dma tx rx buffer addr](img/map_dma_tx_rx_buffer_addr.jpg)
 
 ### UART DMA TX / RX config
 
@@ -277,9 +277,9 @@ DMA buffer allocation result in map file:
 
 ## 5. DMA address / register map
 
-![](img/register_base_DMA0.jpg)
+![5. DMA address / register map — register base DMA0](img/register_base_DMA0.jpg)
 
-![](img/DMA_src_dest_addr.jpg)
+![5. DMA address / register map — DMA src dest addr](img/DMA_src_dest_addr.jpg)
 
 [back to top](#article_top)
 
@@ -289,13 +289,13 @@ DMA buffer allocation result in map file:
 
 ## 6. UART address / register map
 
-![](img/register_base_RLIN3x.jpg)
+![6. UART address / register map — register base RLIN3x](img/register_base_RLIN3x.jpg)
 
 TX : `RLN3nLUTDR`
 
 RX : `RLN3nLURDR`
 
-![](img/RLIN3n_register_tx_rx.jpg)
+![6. UART address / register map — RLIN3n register tx rx](img/RLIN3n_register_tx_rx.jpg)
 
 [back to top](#article_top)
 
@@ -311,7 +311,7 @@ Target trigger source : UART0
 
 * `INTRLIN30UR1` : RLIN30 receive complete interrupt
 
-![](img/DMA_trig_source_uart.jpg)
+![7. Smart Config settings — DMA trig source uart](img/DMA_trig_source_uart.jpg)
 
 TX configuration
 
@@ -320,7 +320,7 @@ TX configuration
 * src count : increase
 * dest count : fixed
 
-![](img/smc_DMA00_config_tx.jpg)
+![7. Smart Config settings — smc DMA00 config tx](img/smc_DMA00_config_tx.jpg)
 
 RX configuration
 
@@ -329,7 +329,7 @@ RX configuration
 * src count : fixed
 * dest count : increase
 
-![](img/smc_DMA01_config_rx.jpg)
+![7. Smart Config settings — smc DMA01 config rx](img/smc_DMA01_config_rx.jpg)
 
 [back to top](#article_top)
 
@@ -572,7 +572,7 @@ CDR0 = (timer_freq * target_isr_timing/10^6) - 1
 
 If need to check global variable / array in watch windows, enable **[Access during the execution]** at Debugger Property > Debug Tool Settings tab.
 
-![](img/watch_windows.jpg)
+![10. Debug watch window — watch windows](img/watch_windows.jpg)
 
 [back to top](#article_top)
 
